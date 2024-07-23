@@ -5,6 +5,7 @@ import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 class ObjectDetectorPainter extends CustomPainter {
   final List<DetectedObject> detectedObjects;
   final Size imageSize;
+  List<Offset> markerOffsets=[];
 
   ObjectDetectorPainter({required this.detectedObjects, required this.imageSize});
 
@@ -28,6 +29,13 @@ class ObjectDetectorPainter extends CustomPainter {
         ..style = PaintingStyle.stroke;
 
       canvas.drawRect(scaledRect, paint);
+
+      final paintdot = Paint()
+        ..color = Colors.purple
+        ..strokeWidth = 3.0
+        ..style = PaintingStyle.fill;
+      final objectoffset = Offset((rect.left+rect.right)* scaleX/2, (rect.top +rect.bottom)* scaleY/2);
+      canvas.drawCircle(objectoffset, 5, paintdot);
 
       for (final label in obj.labels) {
         final textPainter = TextPainter(
