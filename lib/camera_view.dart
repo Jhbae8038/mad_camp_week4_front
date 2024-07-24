@@ -5,9 +5,15 @@ import 'package:flutter/material.dart';
 import 'package:google_mlkit_object_detection/google_mlkit_object_detection.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import 'package:image_gallery_saver/image_gallery_saver.dart';
+import 'package:mad_week4_front/gallery_view.dart';
+import 'package:path_provider/path_provider.dart';
 import 'detector_painter.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
+
 
 class DetectionView extends StatefulWidget {
   final List<CameraDescription> cameras;
@@ -30,8 +36,13 @@ class _DetectionViewState extends State<DetectionView> {
   bool _isCapturing = false;
   Offset headTarget = Offset.zero;
   Offset feetTarget = Offset.zero;
+  List<Map<String, dynamic>> _imageData = [];
+  bool _isFlashOn = false;
+
+
   MarkerPainter? _markerPainter;
   String _feedbackMessage = "";
+  Map<Offset,Color> gridPoints = {};
 
   final _orientations = {
     DeviceOrientation.portraitUp: 0,
@@ -45,6 +56,7 @@ class _DetectionViewState extends State<DetectionView> {
     super.initState();
     _initializeCamera();
     _initializeDetectors();
+    _loadImageData();
   }
 
   @override
@@ -66,6 +78,7 @@ class _DetectionViewState extends State<DetectionView> {
       await _controller.initialize();
       if (!mounted) return;
       setState(() {});
+
       _controller.startImageStream(_processCameraImage);
     } catch (e) {
       _showError('Error initializing camera: $e');
@@ -172,16 +185,6 @@ class _DetectionViewState extends State<DetectionView> {
       return;
     }
 
-    final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
-
-    final imageSize = Size(
-      _controller.value.previewSize!.height,
-      _controller.value.previewSize!.width,
-    );
-    final scaleX = screenWidth / imageSize.width;
-    final scaleY = screenHeight / imageSize.height;
-
     try {
       if (_detectionMode == DetectionModes.object) {
         final List<DetectedObject> objects = await _objectDetector.processImage(inputImage);
@@ -189,10 +192,11 @@ class _DetectionViewState extends State<DetectionView> {
           _detectedObjects = objects;
           _detectedPoses = [];
         });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _performOperationOnMarkerCoordinates();
+        });
       } else if (_detectionMode == DetectionModes.pose) {
         final List<Pose> poses = await _poseDetector.processImage(inputImage);
-        //_updateFeedback(poses);
-
         setState(() {
           _detectedPoses = poses;
           _detectedObjects = [];
@@ -208,67 +212,6 @@ class _DetectionViewState extends State<DetectionView> {
       _isDetecting = false;
     }
   }
-/*
-  void _updateFeedback(List<Pose> poses) {
-    if (poses.isEmpty) {
-      setState(() {
-        _feedbackMessage = "No poses detected";
-      });
-      return;
-    }
-
-    final Pose pose = poses.first;
-    final PoseLandmark? leftFoot = pose.landmarks[PoseLandmarkType.leftFootIndex];
-    final PoseLandmark? rightFoot = pose.landmarks[PoseLandmarkType.rightFootIndex];
-    final PoseLandmark? head = pose.landmarks[PoseLandmarkType.nose];
-
-    if (leftFoot == null || rightFoot == null || head == null) {
-      setState(() {
-        _feedbackMessage = "No poses detected";
-      });
-      return;
-    }
-
-    final Size imageSize = Size(
-      _controller.value.previewSize!.height,
-      _controller.value.previewSize!.width,
-    );
-
-    final headPos = Offset(
-      (head.x / imageSize.width) * MediaQuery.of(context).size.width,
-      (head.y / imageSize.height) * MediaQuery.of(context).size.height,
-    );
-
-    final feetPos = [
-      Offset(
-        (leftFoot.x / imageSize.width) * MediaQuery.of(context).size.width,
-        (leftFoot.y / imageSize.height) * MediaQuery.of(context).size.height,
-      ),
-      Offset(
-        (rightFoot.x / imageSize.width) * MediaQuery.of(context).size.width,
-        (rightFoot.y / imageSize.height) * MediaQuery.of(context).size.height,
-      ),
-    ];
-
-    final isFeetOnGrid = feetPos.every((pos) => pos.dy > MediaQuery.of(context).size.height * 0.8);
-    final isHeadCentered = headPos.dx > MediaQuery.of(context).size.width * 0.4 &&
-        headPos.dx < MediaQuery.of(context).size.width * 0.6;
-
-    if (isFeetOnGrid && isHeadCentered) {
-      setState(() {
-        _feedbackMessage = "Perfect! Hold still and click the camera button.";
-      });
-    } else {
-      setState(() {
-        if (!isFeetOnGrid) {
-          _feedbackMessage = "Move the camera down to include your feet.";
-        } else if (!isHeadCentered) {
-          _feedbackMessage = "Center your head in the middle of the screen.";
-        }
-      });
-    }
-  }
-*/
   Future<void> checkCameraPermission() async {
     if (await Permission.camera.request().isGranted &&
         await Permission.storage.request().isGranted) {
@@ -285,6 +228,12 @@ class _DetectionViewState extends State<DetectionView> {
     await checkCameraPermission();
 
     try {
+      setState(() {
+        _isFlashOn = true;
+      });
+
+      print("Flash on: $_isFlashOn");
+
       await _controller.stopImageStream();
       if (!_controller.value.isInitialized) {
         _showError('Camera not initialized');
@@ -292,13 +241,71 @@ class _DetectionViewState extends State<DetectionView> {
       }
 
       final rawImage = await _controller.takePicture();
-      await ImageGallerySaver.saveFile(rawImage.path);
+
+      final directory = await getApplicationDocumentsDirectory();
+      final path = '${directory.path}/${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final File newImage = await File(rawImage.path).copy(path);
+
+      await ImageGallerySaver.saveFile(newImage.path);
+      await _sendImageToServer(newImage);
 
       await _controller.startImageStream(_processCameraImage);
     } catch (e) {
       _showError('Error capturing image: $e');
+    } finally {
+      setState(() {
+        _isFlashOn = false;
+      });
+      print("Flash Off: $_isFlashOn");
     }
   }
+  Future<void> _sendImageToServer(File imageFile) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('http://172.10.5.90/upload-image/'),
+// Replace with your backend URL
+    );
+    request.files.add(await http.MultipartFile.fromPath('file', imageFile.path));
+
+    final response = await request.send();
+    if (response.statusCode == 200) {
+      final responseData = await response.stream.bytesToString();
+      final decodedData = jsonDecode(responseData);
+      final score = decodedData['score'];
+      final filename = decodedData['filename'];
+
+
+      setState(() {
+        _imageData.add({
+          'path': imageFile.path,
+          'score': score,
+          'filename': filename,
+
+        });
+      });
+      _saveImageData();
+    } else {
+      _showError('Failed to get score from server');
+    }
+  }
+
+  Future<void> _saveImageData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final imageDataJson = jsonEncode(_imageData);
+    await prefs.setString('imageData', imageDataJson);
+  }
+
+  Future<void> _loadImageData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final imageDataJson = prefs.getString('imageData');
+    if (imageDataJson != null) {
+      setState(() {
+        _imageData = List<Map<String, dynamic>>.from(jsonDecode(imageDataJson));
+      });
+    }
+  }
+
+
   void _setDetectionMode(DetectionModes mode) {
     String dialogTitle;
     String contentText;
@@ -340,12 +347,13 @@ class _DetectionViewState extends State<DetectionView> {
     );
   }
 
-  Color targetColor = Colors.red;
+  Color targetColor = Color(0xFFD9D9D9);
 
   void _performOperationOnMarkerCoordinates() {
-    if (_markerPainter == null) {
+    if (_markerPainter?.detectedPoses == null || _markerPainter!.detectedPoses.isEmpty) {
       setState(() {
         _feedbackMessage = "No poses detected";
+        targetColor = Color(0xFFD9D9D9);
       });
       return;
     }else{
@@ -363,13 +371,13 @@ class _DetectionViewState extends State<DetectionView> {
         } else {
           if (!headAligned) {
             setState(() {
-              targetColor = Colors.red.withOpacity(1.0);
+              targetColor = Colors.red;
               _feedbackMessage =
               "Center your head in the middle of the screen.";
             });
           } else if (!feetAligned) {
             setState(() {
-              targetColor = Colors.red.withOpacity(1.0);
+              targetColor = Colors.red;
               _feedbackMessage = "Move the camera down to include your feet.";
             });
           }
@@ -377,6 +385,9 @@ class _DetectionViewState extends State<DetectionView> {
       }
     }
   }
+
+  Color targetColor_obj = Colors.grey;
+
 
   void _showError(String message) {
     setState(() {
@@ -397,7 +408,16 @@ class _DetectionViewState extends State<DetectionView> {
     final previewAspectRatio = previewSize.height / previewSize.width;
     final previewHeight = screenWidth * previewAspectRatio;
     headTarget = Offset(screenWidth / 2, screenHeight * 0.2);
-    feetTarget = Offset(screenWidth / 2, previewSize.height * 0.75);
+    feetTarget = Offset(screenWidth / 2, screenHeight * 0.9);
+
+    gridPoints = {
+      Offset(screenWidth / 3, screenHeight / 3): Colors.grey,
+      // Adjusting for top offset
+      Offset(2 * screenWidth / 3, screenHeight / 3): Colors.grey,
+      Offset(screenWidth / 3, 2 * screenHeight / 3): Colors.grey,
+      Offset(2 * screenWidth / 3, 2 * screenHeight / 3): Colors.grey,
+    };
+
     _markerPainter = MarkerPainter(
       detectedPoses: _detectedPoses,
       imageSize: Size(
@@ -406,11 +426,17 @@ class _DetectionViewState extends State<DetectionView> {
       ),
     );
 
-    return Column(
-      children: [
-        Container(
-          width: 400,
-          height: 800,
+    return Stack(
+        children: [
+    AnimatedContainer(
+    duration: Duration(milliseconds: 100),
+    color: _isFlashOn ? Colors.white : Colors.transparent,
+    child:
+    Column(
+    children: [
+    Container(
+    width: screenWidth,
+    height: screenHeight,
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: Colors.black.withOpacity(0.9),
@@ -419,10 +445,10 @@ class _DetectionViewState extends State<DetectionView> {
             children: [
               Positioned(
                 left: 0,
-                top: 62,
+                top:0,
                 child: Container(
-                  width: 400,
-                  height: 597,
+                  width: screenWidth,
+                  height: screenHeight,
                   decoration: BoxDecoration(color: Color(0xFFD9D9D9)),
                   child: Stack(
                     fit: StackFit.expand,
@@ -436,6 +462,7 @@ class _DetectionViewState extends State<DetectionView> {
                               _controller.value.previewSize!.height,
                               _controller.value.previewSize!.width,
                             ),
+                            gridPoints: gridPoints,
                           ),
                         ),
                       if (_detectionMode == DetectionModes.pose)
@@ -449,32 +476,30 @@ class _DetectionViewState extends State<DetectionView> {
                           ),
                         ),
                       CustomPaint(
-                        painter: GridPainter(),
+                        painter: GridPainter(gridPoints: gridPoints),
                       ),
                       CustomPaint(
                         painter: _markerPainter,
                       ),
-                      Positioned(
-                        left: feetTarget.dx - 10,
-                        top: feetTarget.dy - 10,
-                        child: Container(
-                          width: 20,
-                          height: 20,
-                          decoration: BoxDecoration(
-                            color: targetColor,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
+
+                      CustomPaint(
+                        painter: LinePainter(feetTarget.dy, targetColor), // Add LinePainter here
                       ),
                     ],
                   ),
                 ),
               ),
-              _buildModeButton(left: 156, top: 676, label: '물체 사진', onTap: () => _setDetectionMode(DetectionModes.object)),
-              _buildModeButton(left: 50, top: 676, label: '전신사진', onTap: () => _setDetectionMode(DetectionModes.pose)),
-              _buildModeButton(left: 259, top: 676, label: '모드 3', onTap: () {}),
-              _buildCaptureButton(left: 153, top: 718, onTap: _captureImage),
-              _buildGalleryButton(left: 25, top: 728),
+              _buildModeButton(left: screenWidth * 0.12, top:screenHeight * 0.83, label: '전신사진', onTap: () => _setDetectionMode(DetectionModes.pose)),
+              _buildModeButton(left: screenWidth * 0.43, top: screenHeight * 0.83, label: '물체 사진', onTap: () => _setDetectionMode(DetectionModes.object)),
+              _buildModeButton(left: screenWidth * 0.72, top: screenHeight * 0.83, label: '모드 3', onTap: () {}),
+              _buildCaptureButton(left: screenWidth * 0.42, top: screenHeight * 0.898, onTap: _captureImage),
+              _buildGalleryButton(left: screenWidth * 0.0625, top: screenHeight * 0.91, onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => GalleryPage(imageData: _imageData,),),
+                  );
+                },
+              ),
               Positioned(
                 left: 83,
                 top: 35,
@@ -498,6 +523,9 @@ class _DetectionViewState extends State<DetectionView> {
           ),
         ),
       ],
+    ),
+    ),
+    ],
     );
   }
 
@@ -525,7 +553,6 @@ class _DetectionViewState extends State<DetectionView> {
       ),
     );
   }
-
   Widget _buildCaptureButton({required double left, required double top, required VoidCallback onTap}) {
     return Positioned(
       left: left,
@@ -539,19 +566,24 @@ class _DetectionViewState extends State<DetectionView> {
               width: 60,
               height: 60,
               decoration: ShapeDecoration(
-                color: Color(0xFFD9D9D9),
-                shape: OvalBorder(),
+                color: Colors.transparent, // 바깥 쪽 링의 색상
+                shape: OvalBorder(
+                  side: BorderSide(
+                    color: targetColor, // 바깥 쪽 링의 색상
+                    width: 3, // 링의 두께
+                  ),
+                ),
               ),
             ),
             Container(
               width: 50,
               height: 50,
               decoration: ShapeDecoration(
-                color: Color(0xFFD9D9D9),
+                color: Colors.transparent, // 가운데 버튼을 투명하게 설정
                 shape: OvalBorder(
                   side: BorderSide(
-                    width: 1,
-                    strokeAlign: BorderSide.strokeAlignOutside,
+                    color: targetColor, // 바깥 쪽 링의 색상
+                    width: 1, // 내부 링의 두께
                   ),
                 ),
               ),
@@ -562,20 +594,55 @@ class _DetectionViewState extends State<DetectionView> {
     );
   }
 
-  Widget _buildGalleryButton({required double left, required double top}) {
+  Widget _buildGalleryButton({required double left, required double top, required VoidCallback onTap}) {
     return Positioned(
       left: left,
       top: top,
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: ShapeDecoration(
-          color: Color(0xFFD9D9D9),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: ShapeDecoration(
+            color: Color(0xFFD9D9D9),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
         ),
       ),
     );
+  }
+}
+class LinePainter extends CustomPainter {
+  final double yOffset;
+  final Color lineColor;
+
+  LinePainter(this.yOffset, this.lineColor);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = lineColor
+      ..strokeWidth = 2.0
+      ..style = PaintingStyle.stroke;
+
+    final dashWidth = 5.0;
+    final dashSpace = 5.0;
+    double startX = 0;
+
+    while (startX < size.width) {
+      canvas.drawLine(
+        Offset(startX, yOffset),
+        Offset(startX + dashWidth, yOffset),
+        paint,
+      );
+      startX += dashWidth + dashSpace;
+    }
+  }
+
+  @override
+  bool shouldRepaint(CustomPainter oldDelegate) {
+    return false;
   }
 }

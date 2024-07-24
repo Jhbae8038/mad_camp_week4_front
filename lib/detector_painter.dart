@@ -5,9 +5,12 @@ import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 class ObjectDetectorPainter extends CustomPainter {
   final List<DetectedObject> detectedObjects;
   final Size imageSize;
-  List<Offset> markerOffsets=[];
+  final Map<Offset,Color> gridPoints;
 
-  ObjectDetectorPainter({required this.detectedObjects, required this.imageSize});
+  ObjectDetectorPainter({required this.detectedObjects,
+    required this.imageSize,
+    required this.gridPoints});
+
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -34,8 +37,25 @@ class ObjectDetectorPainter extends CustomPainter {
         ..color = Colors.purple
         ..strokeWidth = 3.0
         ..style = PaintingStyle.fill;
-      final objectoffset = Offset((rect.left+rect.right)* scaleX/2, (rect.top +rect.bottom)* scaleY/2);
+      final objectoffset = Offset((rect.left+rect.right)/ 2 * scaleX, (rect.top +rect.bottom) /2 * scaleY);
       canvas.drawCircle(objectoffset, 5, paintdot);
+
+
+      // Debugging: print object center coordinates
+      print('Object Center: $objectoffset');
+
+      // Check if the object center is close to any grid point
+      gridPoints.forEach((gridPoint, color) {
+        final distance = (objectoffset - gridPoint).distance;
+        // Debugging: print grid point coordinates and distance
+        print('Grid Point: $gridPoint, Distance: $distance');
+
+        if (distance < 20) {
+          gridPoints[gridPoint] = Colors.green;
+          // Debugging: print when a point is highlighted
+          print('Highlighted Grid Point: $gridPoint');
+        }
+      });
 
       for (final label in obj.labels) {
         final textPainter = TextPainter(
@@ -176,12 +196,19 @@ class MarkerPainter extends CustomPainter {
 
 
 class GridPainter extends CustomPainter {
+  final Map<Offset,Color> gridPoints;
+  GridPainter({required this.gridPoints});
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = Colors.white
       ..strokeWidth = 1.0
       ..style = PaintingStyle.stroke;
+
+    final paintdot = Paint()
+      ..color = Colors.grey
+      ..strokeWidth = 3.0
+      ..style = PaintingStyle.fill;
 
     final double xStep = size.width / 3;
     final double yStep = size.height / 3;
@@ -190,7 +217,16 @@ class GridPainter extends CustomPainter {
       canvas.drawLine(Offset(xStep * i, 0), Offset(xStep * i, size.height), paint);
       canvas.drawLine(Offset(0, yStep * i), Offset(size.width, yStep * i), paint);
     }
+
+    gridPoints.forEach((offset, color) {
+      final paintdot = Paint()
+        ..color = color
+        ..strokeWidth = 3.0
+        ..style = PaintingStyle.fill;
+      canvas.drawCircle(offset, 5, paintdot);
+    });
   }
+
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) {
