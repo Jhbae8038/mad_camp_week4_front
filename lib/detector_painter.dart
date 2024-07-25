@@ -153,41 +153,47 @@ class PosePainter extends CustomPainter {
 class MarkerPainter extends CustomPainter {
   final List<Pose> detectedPoses;
   final Size imageSize;
-  List<Offset> markerOffsets=[];
+  Map<String, List<Offset>> markerOffsets = {
+    'noseOffsets': [],
+    'footOffsets': []
+  };
 
   MarkerPainter({required this.detectedPoses, required this.imageSize});
 
   @override
   void paint(Canvas canvas, Size size) {
-    markerOffsets.clear(); // 새로운 프레임을 그릴 때마다 초기화
+    markerOffsets['noseOffsets']!.clear(); // 새로운 프레임을 그릴 때마다 초기화
+    markerOffsets['footOffsets']!.clear(); // 새로운 프레임을 그릴 때마다 초기화
 
     final scaleX = size.width / imageSize.width;
     final scaleY = size.height / imageSize.height;
 
     for (final pose in detectedPoses) {
-        final leftFootPos =pose.landmarks[PoseLandmarkType.leftFootIndex];
-        final rightFootPos =pose.landmarks[PoseLandmarkType.rightFootIndex];
-        final nosePos =pose.landmarks[PoseLandmarkType.nose];
+      final leftFootPos = pose.landmarks[PoseLandmarkType.leftFootIndex];
+      final rightFootPos = pose.landmarks[PoseLandmarkType.rightFootIndex];
+      final nosePos = pose.landmarks[PoseLandmarkType.nose];
 
-        final nosescaledX = (nosePos?.x ?? 0)* scaleX;
-        final nosescaledY = (nosePos?.y ?? 0)* scaleY;
-        final scaledX = (((leftFootPos?.x ?? 0) + (rightFootPos?.x ?? 0)) / 2)* scaleX;
-        final scaledY = (((leftFootPos?.y ?? 0) + (rightFootPos?.y ?? 0)) / 2)* scaleY;
+      final nosescaledX = (nosePos?.x ?? 0) * scaleX;
+      final nosescaledY = (nosePos?.y ?? 0) * scaleY;
+      final scaledX = (((leftFootPos?.x ?? 0) + (rightFootPos?.x ?? 0)) / 2) * scaleX;
+      final scaledY = (((leftFootPos?.y ?? 0) + (rightFootPos?.y ?? 0)) / 2) * scaleY;
 
-        final paint = Paint()
-          ..color = Colors.purple
-          ..strokeWidth = 3.0
-          ..style = PaintingStyle.fill;
+      final paint = Paint()
+        ..color = Colors.purple
+        ..strokeWidth = 3.0
+        ..style = PaintingStyle.fill;
 
-        final FootOffset = Offset(scaledX, scaledY);
-        final noseOffset = Offset(nosescaledX, nosescaledY);
+      final footOffset = Offset(scaledX, scaledY);
+      final noseOffset = Offset(nosescaledX, nosescaledY);
 
-        markerOffsets.add(FootOffset);
-        //markerOffsets.add(noseOffset);
-        canvas.drawCircle(Offset(scaledX, scaledY), 10, paint);
-        canvas.drawCircle(Offset(nosescaledX, nosescaledY), 10, paint);
-      }
+      markerOffsets['footOffsets']!.add(footOffset);
+      markerOffsets['noseOffsets']!.add(noseOffset);
+
+      canvas.drawCircle(footOffset, 10, paint);
+      canvas.drawCircle(noseOffset, 10, paint);
     }
+  }
+
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) {
     return true;
