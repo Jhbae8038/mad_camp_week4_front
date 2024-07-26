@@ -201,6 +201,7 @@ class _DetectionViewState extends State<DetectionView> {
         setState(() {
           _detectedObjects = objects;
           _detectedPoses = [];
+          _feedbackMessage='물체사진';
         });
       } else if (_detectionMode == DetectionModes.pose) {
         final List<Pose> poses = await _poseDetector.processImage(inputImage);
@@ -209,10 +210,10 @@ class _DetectionViewState extends State<DetectionView> {
           _detectedPoses = poses;
           _detectedObjects = [];
         });
-
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _performOperationOnMarkerCoordinates();
         });
+
       } else if (_detectionMode == DetectionModes.side) {
         final List<Pose> poses = await _poseDetector.processImage(inputImage);
 
@@ -336,15 +337,23 @@ class _DetectionViewState extends State<DetectionView> {
     switch (mode) {
       case DetectionModes.object:
         dialogTitle = '물체 사진 모드';
-        contentText = '이 모드는 물체를 감지하는 모드입니다.';
+        contentText = """당신의 인생샷을 위한 물체사진 꿀팁!!\n
+물체나 풍경 사진을 찍을 때에는 피사체를 격자점에 맞추어주세요!\n
+적당한 여백이 있어야 여유와 안정감이 느껴집니다!\n
+음식 사진의 경우 위에서 찍기 보다는 \n음식과 수평한 시야로 찍어주세요!\n""";
         break;
       case DetectionModes.pose:
         dialogTitle = '전신사진 모드';
-        contentText = '이 모드는 전신 사진을 촬영하는 모드입니다.';
+        contentText = """당신의 인생샷을 위한 전신사진\n3가지 꿀팁!!\n
+    1. 전신사진을 찍을 때는 발까지\n나오도록 하고 발목 자르지 않기!\n
+    2. 얼굴은 왜곡이 적은 격자 가운데   위치시키고 화면 아래쪽에 발끝 맞추기!\n
+    3. 사진 찍는 대상 눈높이보단 낮은 곳에서 약간 카메라를 내쪽으로 당겨서\n촬영하기!""";
         break;
       case DetectionModes.side:
         dialogTitle = '측면사진 모드';
-        contentText = '이 모드는 측면 사진을 촬영하는 모드입니다.';
+        contentText = """당신의 인생샷을 위한 측면사진 꿀팁!!\n
+격자의 1/3지점에 인물이 위치하도록 \n합니다!\n
+인물이 바라보는 지점에는 배경적 여유가 있어야 안정적으로 느껴집니다!""";
         break;
       default:
         dialogTitle = '모드 변경';
@@ -355,25 +364,21 @@ class _DetectionViewState extends State<DetectionView> {
     showDialog(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: Text(dialogTitle),
-          content: Text(contentText),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                setState(() {
-                  _detectionMode = mode;
-                  _feedbackMessage = dialogTitle;
-                });
-              },
-              child: Text('확인'),
-            ),
-          ],
+        return CustomDialog(
+          title: dialogTitle,
+          content: contentText,
+          onConfirm: () {
+            Navigator.of(context).pop();
+            setState(() {
+              _detectionMode = mode;
+              _feedbackMessage = dialogTitle;
+            });
+          },
         );
       },
     );
   }
+
 
   Color targetColor = Color(0xFFD9D9D9);
 
@@ -384,7 +389,7 @@ class _DetectionViewState extends State<DetectionView> {
         _markerPainter!.markerOffsets['noseOffsets']!.isEmpty ||
         _markerPainter!.markerOffsets['footOffsets']!.isEmpty) {
       setState(() {
-        _feedbackMessage = "No poses detected";
+        _feedbackMessage = "사람을 감지할 수 없어요";
         targetColor = Color(0xFFD9D9D9);
       });
       return;
@@ -398,19 +403,19 @@ class _DetectionViewState extends State<DetectionView> {
           setState(() {
             targetColor = Colors.green;
             _feedbackMessage =
-                "Perfect! Hold still and click the camera button.";
+                "완벽해요!";
           });
         } else {
           if (!headAligned) {
             setState(() {
               targetColor = Colors.red;
               _feedbackMessage =
-                  "Center your head in the middle of the screen.";
+                  "중앙으로 이동해주세요";
             });
           } else if (!feetAligned) {
             setState(() {
               targetColor = Colors.red;
-              _feedbackMessage = "Move the camera down to include your feet.";
+              _feedbackMessage = "발 끝선을 맞춰주세요";
             });
           }
 
@@ -426,7 +431,7 @@ class _DetectionViewState extends State<DetectionView> {
         _markerPainter!.markerOffsets['noseOffsets']!.isEmpty ||
         _markerPainter!.markerOffsets['footOffsets']!.isEmpty) {
       setState(() {
-        _feedbackMessage = "No poses detected";
+        _feedbackMessage = "사람을 감지할 수 없어요";
         targetColor = Color(0xFFD9D9D9);
       });
       return;
@@ -444,7 +449,7 @@ class _DetectionViewState extends State<DetectionView> {
           setState(() {
             targetColor = Colors.green;
             _feedbackMessage =
-            "Perfect! Hold still and click the camera button.";
+            "완벽해요!";
           });
         } else {
           if (!headAligned) {
@@ -462,7 +467,7 @@ class _DetectionViewState extends State<DetectionView> {
           else if(!feetAligned_y) {
             setState(() {
               targetColor = Colors.red;
-              _feedbackMessage = "발을 아래로 내려주세요";
+              _feedbackMessage = "발 끝선을 맞춰주세요";
             });
           }
 
@@ -622,22 +627,31 @@ class _DetectionViewState extends State<DetectionView> {
                 },
               ),
               Positioned(
-                left: 83,
+                left: 86,
                 top: 35,
                 child: SizedBox(
                   width: 200,
                   height: 30,
-                  child: Text(
-                    _feedbackMessage,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Color(0xFFF5E12A),
-                      fontSize: 12,
-                      fontFamily: 'Inter',
-                      fontWeight: FontWeight.w400,
-                      height: 0,
+
+                  child: Container(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.purple,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      _feedbackMessage,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontFamily: 'Inter',
+                        fontWeight: FontWeight.w500,
+                        height: 0,
+                      ),
                     ),
                   ),
+
                 ),
               ),
             ],
@@ -654,7 +668,7 @@ class _DetectionViewState extends State<DetectionView> {
       required String label,
       required DetectionModes mode}) {
     final isActive = _detectionMode == mode;
-    final color = isActive ? Colors.yellow : Colors.white; // 활성화된 모드는 노란색으로 표시
+    final color = isActive ? Colors.white : Colors.white; // 활성화된 모드는 노란색으로 표시
     final fontWeight = isActive ? FontWeight.bold : FontWeight.normal; // 활성화된 모드는 굵은 글씨
     return Positioned(
       left: left,
@@ -664,7 +678,7 @@ class _DetectionViewState extends State<DetectionView> {
         child: Container(
           padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
-            color: isActive ? Colors.blue : Colors.transparent,
+            color: isActive ? Colors.purple : Colors.transparent,
             borderRadius: BorderRadius.circular(10),
           ),
           child: Text(
@@ -736,17 +750,69 @@ class _DetectionViewState extends State<DetectionView> {
       top: top,
       child: GestureDetector(
         onTap: onTap,
-        child: Container(
-          width: 40,
-          height: 40,
-          decoration: ShapeDecoration(
-            color: Color(0xFFD9D9D9),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
+        child:IconButton(
+          onPressed: onTap,
+          icon:
+          Icon(Icons.photo_library, color: Color(0xFFD9D9D9)),
+          iconSize: 40,
+
+
+        ),
+      ),
+    );
+  }
+}
+
+class CustomDialog extends StatelessWidget {
+  final String title;
+  final String content;
+  final VoidCallback onConfirm;
+
+  CustomDialog({required this.title, required this.content, required this.onConfirm});
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(24.0)),
+      ),
+      title: Text(
+        title,
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: Colors.purple,
+          fontSize: 24,
+          fontFamily: 'Work Sans',
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      content: Text(
+        content,
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: Color(0xFF191C20),
+          fontSize: 16,
+          fontFamily: 'Work Sans',
+          fontWeight: FontWeight.w400,
+        ),
+      ),
+      actions: [
+        Center(
+          child: TextButton(
+            onPressed: onConfirm,
+            child: Text(
+              '확인',
+              style: TextStyle(
+                color: Color(0xFF191C20),
+                fontSize: 18,
+                fontFamily: 'Work Sans',
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ),
-      ),
+      ],
+      actionsAlignment: MainAxisAlignment.center, // 이 줄을 추가하여 버튼을 가운데 정렬
     );
   }
 }
