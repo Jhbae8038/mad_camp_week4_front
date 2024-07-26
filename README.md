@@ -1,16 +1,33 @@
-# mad_week4_front
+## 인생내컷 소개
 
-A new Flutter project.
+인생내컷은 사진을 찍기 어려워하는 사람들을 돕기 위한 어플입니다. 사진을 찍는 방법을 알려주고 찍은 사진에 대해 평가해주며 더 나은 사진을 위한 피드백도 제공합니다.
 
-## Getting Started
+## 팀원
 
-This project is a starting point for a Flutter application.
+KAIST 전산학부 19학번 김동연
 
-A few resources to get you started if this is your first Flutter project:
+KAIST 전산학부 22학번 배준형
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## 개발 환경
+
+Front-end: Flutter
+
+Back-end: FastAPI
+
+Deep Learning: PyTorch
+
+## 어플의 구성
+
+### 1️⃣ 카메라
+- 3가지 사진 촬영 모드(전신 사진, 물체 사진, 측면 사진)을 지원합니다.
+- google pose detection과 google object detection을 이용해 물체와 인물을 인식 그에 맞는 촬영 기법을 알려줍니다.
+
+### 2️⃣ 갤러리
+
+- 지금까지 촬영했던 사진들의 점수를 확인할 수 있습니다. 점수는 직접 학습한 ResNet 모델을 통해 제공됩니다.
+- 점수별로 한 눈에 얼마나 좋은 사진인지 알 수 있도록 색으로 표시합니다.
+
+### 3️⃣ 상세 이미지
+
+- 이미지의 전체화면을 확인할 수 있고 openai api를 이용한 피드백을 제공합니다.
